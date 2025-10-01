@@ -5,16 +5,21 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "start": "node ./src/index.js",
-    "dev": "nodemon ./src/index.js",
-    "db:setup": "psql $DATABASE_URL -f sql/schema.sql",
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "start": "node ./src/index.js",
+  "dev": "nodemon ./src/index.js",
+  "db:setup": "psql $DATABASE_URL -f sql/schema.sql",
+  "db:setup:test": "psql $TEST_DATABASE_URL -f sql/schema.sql",
+  "test": "cross-env NODE_ENV=test node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+  "test:ci": "cross-env NODE_ENV=test node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand --coverage"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "cross-env": "^10.1.0",
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.10",
+    "supertest": "^7.1.4"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -23,5 +28,10 @@
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.12.0",
     "uuid": "^9.0.1"
+  },
+  "jest": {
+  "testEnvironment": "node",
+  "verbose": true,
+  "setupFilesAfterEnv": ["<rootDir>/tests/jest.setup.js"]
   }
 }
