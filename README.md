@@ -81,3 +81,11 @@ User Endpoints
 | PATCH  | `/products/:id` | Partial update of product | Yes (owner only) |
 | DELETE | `/products/:id` | Delete a product          | Yes (owner only) |
 
+{
+    "id": 1759178256459,
+    "email": "Sebastian_Stanton@hotmail.com",
+    "first_name": "Jordan",
+    "last_name": "Harvey",
+    "account_created": "2025-09-29T20:37:36.459Z",
+    "account_updated": "2025-09-29T20:37:36.459Z"
+}
