@@ -1,11 +1,13 @@
 {
   "name": "webapp",
   "version": "1.0.0",
-  "description": "created a assignment-02 brach for webapp",
-  "main": "index.js",
+  "description": "created a assignment-02 branch for webapp",
+  "type": "module",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
+    "start": "node ./src/index.js",
+    "dev": "nodemon ./src/index.js",
+    "db:setup": "psql $DATABASE_URL -f sql/schema.sql",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -16,10 +18,10 @@
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
-    "body-parser": "^2.2.0",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
-    "uuid": "^8.3.2"
+    "pg": "^8.12.0",
+    "uuid": "^9.0.1"
   }
 }
