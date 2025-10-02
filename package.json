@@ -5,12 +5,12 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-  "start": "node ./src/index.js",
-  "dev": "nodemon ./src/index.js",
-  "db:setup": "psql $DATABASE_URL -f sql/schema.sql",
-  "db:setup:test": "psql $TEST_DATABASE_URL -f sql/schema.sql",
-  "test": "cross-env NODE_ENV=test node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
-  "test:ci": "cross-env NODE_ENV=test node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand --coverage"
+    "start": "node ./src/index.js",
+    "dev": "nodemon ./src/index.js",
+    "db:setup": "psql $DATABASE_URL -f sql/schema.sql",
+    "db:setup:test": "psql $TEST_DATABASE_URL -f sql/schema.sql",
+    "test": "cross-env NODE_ENV=test node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+    "test:ci": "cross-env NODE_ENV=test node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand --coverage"
   },
   "keywords": [],
   "author": "",
@@ -25,13 +25,14 @@
     "bcrypt": "^6.0.0",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
-    "jsonwebtoken": "^9.0.2",
     "pg": "^8.12.0",
     "uuid": "^9.0.1"
   },
   "jest": {
-  "testEnvironment": "node",
-  "verbose": true,
-  "setupFilesAfterEnv": ["<rootDir>/tests/jest.setup.js"]
+    "testEnvironment": "node",
+    "verbose": true,
+    "setupFilesAfterEnv": [
+      "<rootDir>/tests/jest.setup.js"
+    ]
   }
 }
