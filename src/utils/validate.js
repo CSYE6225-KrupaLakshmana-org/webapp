@@ -1,45 +1,79 @@
-export const isNonEmpty = (s) => typeof s === 'string' && s.trim().length > 0;
-export const isUsername = (s) => /^[a-zA-Z0-9_.-]{3,32}$/.test(s || '');
-export const isPassword = (s) => typeof s === 'string' && s.length >= 8; // tune as needed
+// src/utils/validate.js
 
+const isNonEmpty = (s) => typeof s === 'string' && s.trim().length > 0;
+const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+const isPassword = (s) => typeof s === 'string' && s.length >= 8;
+const isInt = (n) => Number.isInteger(n);
+const isNonNegativeInt = (n) => isInt(n) && n >= 0;
 
-export function validateNewUser(body) {
-const { first_name, last_name, username, password } = body || {};
-if (!isNonEmpty(first_name) || !isNonEmpty(last_name)) return 'first_name and last_name are required';
-if (!isUsername(username)) return 'username must be 3-32 chars (letters, numbers, _.-)';
-if (!isPassword(password)) return 'password must be at least 8 characters';
-return null;
+// ----- USERS -----
+
+export function validateNewUser(b) {
+  if (!b) return 'body required';
+  const { first_name, last_name, username, password } = b;
+
+  if (![first_name, last_name, username, password].every(isNonEmpty)) {
+    return 'first_name,last_name,username,password required';
+  }
+  if (!isEmail(username)) return 'username must be a valid email address';
+  if (!isPassword(password)) return 'password must be >= 8 chars';
+
+  // Disallow system fields
+  if ('id' in b || 'account_created' in b || 'account_updated' in b) {
+    return 'immutable fields present';
+  }
+  return null;
 }
 
+export function validateUserUpdate(b) {
+  if (!b) return 'body required';
 
-export function validateUserUpdate(body) {
-if (!body) return 'body required';
-if ('username' in body || 'account_created' in body || 'account_updated' in body || 'id' in body) {
-return 'username/id/account_* fields are immutable';
-}
-const { first_name, last_name, password } = body;
-if (first_name !== undefined && !isNonEmpty(first_name)) return 'first_name invalid';
-if (last_name !== undefined && !isNonEmpty(last_name)) return 'last_name invalid';
-if (password !== undefined && !isPassword(password)) return 'password must be at least 8 characters';
-return null;
+  // Username + system fields are immutable
+  if ('username' in b || 'id' in b || 'account_created' in b || 'account_updated' in b) {
+    return 'immutable fields present';
+  }
+
+  if ('first_name' in b && !isNonEmpty(b.first_name)) return 'first_name required';
+  if ('last_name' in b && !isNonEmpty(b.last_name)) return 'last_name required';
+  if ('password' in b && !isPassword(b.password)) return 'password must be >= 8 chars';
+
+  return null;
 }
 
-export function validateNewProduct(body) {
-    const { name, description, sku, manufacturer, quantity } = body || {};
-    if (![name, description, sku, manufacturer].every(isNonEmpty)) return 'name, description, sku, manufacturer are required';
-    if (!Number.isInteger(quantity) || quantity < 0) return 'quantity must be an integer >= 0';
-    return null;
-    }
-    
-    
-    export function validateProductUpdate(body) {
-    if (!body) return 'body required';
-    if ('id' in body || 'owner_user_id' in body || 'date_added' in body || 'date_last_updated' in body) {
-    return 'id/owner/date fields are immutable';
-    }
-    if ('quantity' in body) {
-    const q = body.quantity;
-    if (!Number.isInteger(q) || q < 0) return 'quantity must be an integer >= 0';
-    }
-    return null;
-    }
+// ----- PRODUCTS -----
+
+export function validateNewProduct(b) {
+  if (!b) return 'body required';
+
+  const { name, description, sku, manufacturer, quantity } = b;
+
+  if (![name, description, sku, manufacturer].every(isNonEmpty)) {
+    return 'name,description,sku,manufacturer required';
+  }
+  if (!isNonNegativeInt(quantity)) return 'quantity must be a non-negative integer';
+
+  // Disallow system/owner fields
+  if ('id' in b || 'date_added' in b || 'date_last_updated' in b || 'owner_user_id' in b) {
+    return 'immutable fields present';
+  }
+  return null;
+}
+
+export function validateProductUpdate(b) {
+  if (!b) return 'body required';
+
+  // Disallow system/owner fields
+  if ('id' in b || 'date_added' in b || 'date_last_updated' in b || 'owner_user_id' in b) {
+    return 'immutable fields present';
+  }
+
+  if ('name' in b && !isNonEmpty(b.name)) return 'name required';
+  if ('description' in b && !isNonEmpty(b.description)) return 'description required';
+  if ('sku' in b && !isNonEmpty(b.sku)) return 'sku required';
+  if ('manufacturer' in b && !isNonEmpty(b.manufacturer)) return 'manufacturer required';
+  if ('quantity' in b && !isNonNegativeInt(b.quantity)) {
+    return 'quantity must be a non-negative integer';
+  }
+
+  return null;
+}
