@@ -1,91 +1,148 @@
-# webapp
-# Cloud-Native Web Application - Assignment 02
+## Cloud Native Webapp (API-only)
 
-## Overview
-This project implements a **cloud-native web application backend** for Assignment-02 of CSYE6225.  
-It focuses on **RESTful APIs**, **user authentication**, and **product management**.  
-The application is built with **Node.js** and **Express**, with **JWT-based authentication** and **JSON file storage**.
+## What this is:
+A backend-only REST API built with Node.js and PostgreSQL. It exposes user and product endpoints (no UI) and follows the Fall 2025 A2 Swagger spec. All write operations accept JSON only. Some endpoints are public; others require authentication.
 
-### Features Implemented
-- **User Management**
-  - Create user account (Sign Up) with email, password, first name, last name
-  - Passwords are securely stored using **bcrypt hashing**
-  - Account timestamps: `account_created`, `account_updated`
-  - Login to generate **JWT tokens** for authentication
-  - Get user information (excluding password) using JWT authentication
-  - Update user information (first name, last name, password)
-- **Product Management**
-  - Add, update, and delete products
-  - Product quantity cannot be negative
-  - Only the user who added a product can update or delete it
-- **Security**
-  - Token-based authentication (JWT)
-  - Protected routes require `Authorization: Bearer <JWT_TOKEN>`
-- **Error Handling**
-  - Proper HTTP status codes for success and failure
-  - Returns `400` for bad requests (e.g., updating restricted fields or duplicate email)
-  - Returns `401` for unauthorized access (invalid/missing token)
-  - Returns `404` for not found resources
+## Key features:
 
----
+Health check endpoint for service readiness
 
-## Prerequisites
-- Node.js (v18 or higher recommended)
-- npm (v9 or higher)
-- Git
-- Postman or any API testing tool
+User accounts: create, get self, update self
 
----
+Products: create, get (public), replace, patch, delete
 
-## Setup Instructions
+Authentication: Basic Auth (username + password on every protected request)
 
-1. **Clone your forked repository**
-   ```bash
-   git clone git@github.com:Krupa-lakshmana/webapp.git
-   cd webapp
+Security: passwords hashed with BCrypt; passwords never returned in responses
 
-## Install dependencies
+Validation: usernames must be valid emails; system audit fields are read-only
 
-   **npm install
+Status codes: 200/201/204 happy paths; 400/401/403/404/409/415 error handling
 
+What you need before you start
 
-## Environment variables
-Create a .env file in the root:
+A recent Node.js runtime (v20 or newer recommended)
 
-JWT_SECRET=mysecretkey
-PORT=3000
+A local PostgreSQL server (v14+), with the SQL command-line client available
 
+The ability to create two local databases (one for development, one for tests)
 
-## Start the development server
+## Configuration (environment)
 
-   **npm run dev
+The app is configured via environment variables. You’ll point it at your local PostgreSQL databases and choose the port it listens on. For tests, use a separate test database. You don’t need any UI-related settings because this is strictly an API.
 
+At minimum you will provide:
 
-   **Server will run at http://localhost:3000
+The HTTP port to listen on for local development
 
-   ## API Endpoints
-User Endpoints
-| Method | URL             | Description                  | Auth |
-| ------ | --------------- | ---------------------------- | ---- |
-| POST   | `/users`        | Create a new user            | No   |
-| POST   | `/users/login`  | Login and generate JWT token | No   |
-| GET    | `/users/:email` | Get user information         | Yes  |
-| PUT    | `/users/:email` | Update user information      | Yes  |
-| PATCH  | `/users/:email` | Partial update of user       | Yes  |
+A development database URL (for normal usage)
 
-## Product Endpoints
-| Method | URL             | Description               | Auth             |
-| ------ | --------------- | ------------------------- | ---------------- |
-| POST   | `/products`     | Add a product             | Yes              |
-| PUT    | `/products/:id` | Update a product          | Yes (owner only) |
-| PATCH  | `/products/:id` | Partial update of product | Yes (owner only) |
-| DELETE | `/products/:id` | Delete a product          | Yes (owner only) |
+A test database URL (for the automated test suite)
 
-{
-    "id": 1759178256459,
-    "email": "Sebastian_Stanton@hotmail.com",
-    "first_name": "Jordan",
-    "last_name": "Harvey",
-    "account_created": "2025-09-29T20:37:36.459Z",
-    "account_updated": "2025-09-29T20:37:36.459Z"
-}
+## Database setup
+
+Create your development database, then enable the UUID extension.
+
+Create your test database, also enable the UUID extension.
+
+Apply the schema in sql/schema.sql to both databases.
+
+This creates the users and products tables, plus the required indexes and constraints.
+
+(If you’re ever unsure, describe the schema: users have names, email username, bcrypt password hash, and audit timestamps; products have name, description, sku, manufacturer, quantity, owner id, and audit timestamps. sku + owner is unique; quantity can’t be negative.)
+
+## Running the API locally
+
+Ensure PostgreSQL is running and your development database is reachable.
+
+Start the server using your project’s start script.
+
+When it’s running, open your REST client and call the health endpoint to confirm you get an HTTP 200.
+
+If the server refuses to start, it’s usually a database connection issue. Double-check your database URL, that the database exists, and that the UUID extension was enabled before applying the schema.
+
+Using the API with Postman (or any REST client)
+
+## Environment variables you’ll use in Postman:
+
+base_url set to your local server (for example, http://localhost:3000
+)
+
+You don’t need to store a token because authentication is Basic (username/password on each protected request)
+
+Auth mode for protected endpoints:
+Set Authorization type to Basic Auth, and provide the created user’s email as the username and their password as the password. (No sessions, no JWT.)
+
+## Manual flow:
+
+Call the health endpoint (should return 200).
+
+Create a user account (returns 201 and the new user id). Usernames must be valid emails.
+
+Get the user by id (requires Basic Auth for that same user; returns 200).
+
+Update the user (requires Basic Auth; returns 204 and no body).
+
+Create a product (requires Basic Auth; returns 201 and the product id).
+
+Get the product by id (public; returns 200).
+
+Replace the product (requires Basic Auth and JSON; returns 204).
+
+Patch the product (requires Basic Auth and JSON; returns 204).
+
+Delete the product (requires Basic Auth; returns 204).
+
+## Important behaviors to know:
+
+JSON is required on POST/PUT/PATCH. If the content type isn’t JSON, the API returns 415.
+
+If you try to act as a different user, the API returns 403.
+
+If you omit or provide wrong Basic credentials, the API returns 401.
+
+Immutable fields like audit timestamps, ids, and username are rejected on updates with a 400.
+
+Duplicate user emails and duplicate product SKU per owner are rejected with a 409.
+
+## Automated tests (integration)
+
+A full set of integration tests exists and runs against the test database. These tests cover positive paths, negative validations, auth/authorization, and edge cases. They also verify the correct status codes and that passwords are never leaked in any response.
+
+To run them locally, use your project’s test script with your test database configured and the schema applied. The test suite truncates the test tables between tests.
+
+## Continuous Integration (GitHub Actions)
+
+A CI workflow is included that:
+
+Checks out the repo on pull requests to the main branch
+
+Spins up a disposable PostgreSQL service
+
+Applies the schema
+
+Installs dependencies and runs the automated tests
+
+Fails the PR if any tests fail
+
+Use branch protection to require the CI check to pass before merging.
+
+Troubleshooting quick tips
+
+401 on a protected endpoint: provide Basic Auth with the correct email and password.
+
+403 when getting a user: you can only fetch your own user record.
+
+415 on POST/PUT/PATCH: set Content-Type to application/json and send valid JSON.
+
+409 when creating resources: email already used for a user, or SKU already used by the same owner.
+
+DB connection errors: verify the database exists, the URL is correct, the UUID extension is enabled, and the schema has been applied.
+
+## What this app deliberately does not include
+
+Any HTML pages, forms, or UI components
+
+Any session management or JWT usage (Basic Auth is used for protected endpoints)
+
+Any return of password hashes or sensitive fields in responses
