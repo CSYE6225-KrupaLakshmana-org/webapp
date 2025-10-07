@@ -21,7 +21,7 @@ export async function createUserHandler(req, res) {
     const err = validateNewUser(req.body);
     if (err) return res.status(400).json({ error: err });
 
-    const { first_name, last_name, username, password } = req.body;
+    const { first_name, last_name, username, password,hrelololololololo } = req.body;
 
     const existing = await getUserByUsername(username);
     if (existing) return res.status(409).json({ error: 'username already exists' });
