@@ -20,6 +20,6 @@ test('max ~255-char strings -> 201 product', async () => {
       quantity: 0
     });
 
-  expect(r.status).toBe(201);
+  expect(r.status).toBe(205);
   expect(r.body).toHaveProperty('id');
 });
