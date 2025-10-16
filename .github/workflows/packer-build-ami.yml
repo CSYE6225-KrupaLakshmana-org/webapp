@@ -1,5 +1,6 @@
 name: Build AMI after merge
 
+# 🔔 ONLY runs when code is pushed to main (i.e., after PR is merged)
 on:
   push:
     branches: [ main ]
@@ -9,33 +10,42 @@ permissions:
 
 jobs:
   test-build-ami:
+    name: Run tests → Build artifact → Build AMI
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 60
 
-      # 1) Run your Node.js integration tests (A3)
+    steps:
+      # 1) Check out code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) Node setup (use your runtime)
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      # 3) Install deps & run integration tests (Assignment-3)
       - name: Install & test
         run: |
           npm ci
           npm test
 
-      # 2) Build artifact on the runner (NOT inside the image)
+      # 4) Build artifact ON THE RUNNER (NOT inside AMI)
       - name: Build artifact (zip)
         run: |
           mkdir -p dist
-          # Include EXACTLY what's needed to run in /opt/webapp
+          # Include exactly what your app needs to run in /opt/webapp
           zip -r dist/artifact.zip src package*.json
 
-      - uses: actions/upload-artifact@v4
+      # 5) Make artifact available to later steps
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
           name: webapp-artifact
           path: dist/artifact.zip
 
-      # 3) Configure AWS credentials (DEV account)
+      # 6) Configure AWS CLI for DEV account (from Secrets)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -43,28 +53,35 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
 
-      # 4) Setup Packer
-      - uses: hashicorp/setup-packer@v2
+      # 7) Install Packer (pin to match your local version)
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v2
         with:
-         version: '1.14.2'
+          version: '1.14.2'
 
-
-      # 5) Download the built artifact where Packer expects it
-      - uses: actions/download-artifact@v4
+      # 8) Download our built artifact into packer/dist so the "file" provisioner can find it
+      - name: Download artifact for Packer
+        uses: actions/download-artifact@v4
         with:
           name: webapp-artifact
           path: packer/dist
 
-      # 6) Build AMI
-      - name: packer init & build
+      # 9) Initialize Packer plugins (amazon-ebs)
+      - name: packer init
+        working-directory: packer
+        run: packer init .
+
+      # 10) Build AMI in DEV and share privately to DEMO
+      - name: packer build (AMI)
         working-directory: packer
         env:
           PACKER_LOG: "1"
         run: |
-          packer init .
+          set -e
+          echo "Starting Packer build..."
           packer build \
             -var "region=${{ secrets.AWS_REGION }}" \
             -var "demo_account_id=${{ secrets.DEMO_ACCOUNT_ID }}" \
-            -var "app_port=${{ secrets.APP_PORT || 8080 }}" \
-            -var "db_password=${{ secrets.DB_PASSWORD }}" \
+            -var "app_port=${{ secrets.PORT || 8080 }}" \
+            -var "db_password=${{ secrets.POSTGRES_PASSWORD }}" \
             ubuntu-webapp.pkr.hcl
