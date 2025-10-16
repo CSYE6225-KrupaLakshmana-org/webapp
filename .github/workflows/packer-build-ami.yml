@@ -9,21 +9,19 @@ permissions:
 
 jobs:
   test-build-ami:
-    name: Run tests → Build artifact → Build AMI
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    # 🔌 Start a Postgres container just for this job
+    # Start a Postgres container for tests
     services:
       postgres:
         image: postgres:15
         env:
           POSTGRES_USER: csye_app
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}   # <-- must be non-empty
           POSTGRES_DB: webapp
         ports:
           - 5432:5432
-        # healthcheck so the job doesn't start tests before DB is ready
         options: >-
           --health-cmd="pg_isready -U csye_app -d webapp"
           --health-interval=10s
@@ -34,18 +32,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Ensure DB_PASSWORD secret exists (guard)
+        run: |
+          if [ -z "${{ secrets.DB_PASSWORD }}" ]; then
+            echo "ERROR: DB_PASSWORD secret is empty or not set in this repo."
+            exit 1
+          fi
+          echo "DB_PASSWORD is set (value hidden)."
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # optional: install psql client so we can run readiness/migrations
       - name: Install psql client
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y postgresql-client netcat-openbsd
 
-      # Wait until the service is reachable on the mapped port (belt & suspenders in addition to healthcheck)
       - name: Wait for Postgres port
         run: |
           for i in {1..30}; do
@@ -56,13 +60,11 @@ jobs:
           echo "Postgres did not start in time" >&2
           exit 1
 
-      # If you have migrations or schema files, run them here.
-      # Adjust the path/command for your project.
+      # (Optional) Run your schema/migrations if your tests expect tables to exist
       - name: (Optional) Run DB migrations
         env:
           DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
         run: |
-          # Example options — keep whichever fits your repo:
           if [ -f "db/schema.sql" ]; then
             psql "$DATABASE_URL" -f db/schema.sql
           elif [ -f "migrations/init.sql" ]; then
@@ -74,14 +76,12 @@ jobs:
             echo "No migration step found; skipping."
           fi
 
-      # 👉 Your tests now have a live DB on localhost:5432
       - name: Install & test
         env:
-          # Most Node Postgres setups use DATABASE_URL; add PG* too for safety
-          DATABASE_URL: postgresql://csye_app:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/webapp
+          DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
           PGHOST: localhost
           PGUSER: csye_app
-          PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
           PGDATABASE: webapp
           PGPORT: 5432
           NODE_ENV: test
@@ -89,7 +89,6 @@ jobs:
           npm ci
           npm test
 
-      # Build artifact on the runner (NOT inside AMI)
       - name: Build artifact (zip)
         run: |
           mkdir -p dist
@@ -131,6 +130,6 @@ jobs:
           packer build \
             -var "region=${{ secrets.AWS_REGION }}" \
             -var "demo_account_id=${{ secrets.DEMO_ACCOUNT_ID }}" \
-            -var "app_port=${{ secrets.PORT || 8080 }}" \
-            -var "db_password=${{ secrets.POSTGRES_PASSWORD }}" \
+            -var "app_port=${{ secrets.APP_PORT || 8080 }}" \
+            -var "db_password=${{ secrets.DB_PASSWORD }}" \
             ubuntu-webapp.pkr.hcl
