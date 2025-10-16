@@ -26,14 +26,14 @@ source "amazon-ebs" "ubuntu24" {
   associate_public_ip_address = true
 
   source_ami_filter {
-    filters = {
-      name                = "ubuntu/images/hvm-ssd/ubuntu-noble-24.04-amd64-server-*"
-      root-device-type    = "ebs"
-      virtualization-type = "hvm"
-    }
-    owners      = ["099720109477"] # Canonical
-    most_recent = true
+  filters = {
+    # match both hvm-ssd and hvm-ssd-gp3 name prefixes
+    name                = "ubuntu/images/*/ubuntu-noble-24.04-amd64-server-*"
+    root-device-type    = "ebs"
+    virtualization-type = "hvm"
   }
+  owners      = ["099720109477"] # Canonical
+  most_recent = true
 }
 
 build {
