@@ -1,6 +1,5 @@
 name: Build AMI after merge
 
-# 🔔 ONLY runs when code is pushed to main (i.e., after PR is merged)
 on:
   push:
     branches: [ main ]
@@ -14,38 +13,94 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
+    # 🔌 Start a Postgres container just for this job
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: csye_app
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: webapp
+        ports:
+          - 5432:5432
+        # healthcheck so the job doesn't start tests before DB is ready
+        options: >-
+          --health-cmd="pg_isready -U csye_app -d webapp"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
-      # 1) Check out code
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Node setup (use your runtime)
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # 3) Install deps & run integration tests (Assignment-3)
+      # optional: install psql client so we can run readiness/migrations
+      - name: Install psql client
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+
+      # Wait until the service is reachable on the mapped port (belt & suspenders in addition to healthcheck)
+      - name: Wait for Postgres port
+        run: |
+          for i in {1..30}; do
+            nc -z localhost 5432 && echo "Postgres up" && exit 0
+            echo "Waiting for Postgres... ($i)"
+            sleep 2
+          done
+          echo "Postgres did not start in time" >&2
+          exit 1
+
+      # If you have migrations or schema files, run them here.
+      # Adjust the path/command for your project.
+      - name: (Optional) Run DB migrations
+        env:
+          DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
+        run: |
+          # Example options — keep whichever fits your repo:
+          if [ -f "db/schema.sql" ]; then
+            psql "$DATABASE_URL" -f db/schema.sql
+          elif [ -f "migrations/init.sql" ]; then
+            psql "$DATABASE_URL" -f migrations/init.sql
+          elif npm run | grep -q "db:migrate"; then
+            npm ci --ignore-scripts
+            npm run db:migrate
+          else
+            echo "No migration step found; skipping."
+          fi
+
+      # 👉 Your tests now have a live DB on localhost:5432
       - name: Install & test
+        env:
+          # Most Node Postgres setups use DATABASE_URL; add PG* too for safety
+          DATABASE_URL: postgresql://csye_app:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/webapp
+          PGHOST: localhost
+          PGUSER: csye_app
+          PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          PGDATABASE: webapp
+          PGPORT: 5432
+          NODE_ENV: test
         run: |
           npm ci
           npm test
 
-      # 4) Build artifact ON THE RUNNER (NOT inside AMI)
+      # Build artifact on the runner (NOT inside AMI)
       - name: Build artifact (zip)
         run: |
           mkdir -p dist
-          # Include exactly what your app needs to run in /opt/webapp
           zip -r dist/artifact.zip src package*.json
 
-      # 5) Make artifact available to later steps
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: webapp-artifact
           path: dist/artifact.zip
 
-      # 6) Configure AWS CLI for DEV account (from Secrets)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -53,32 +108,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
 
-      # 7) Install Packer (pin to match your local version)
       - name: Setup Packer
         uses: hashicorp/setup-packer@v2
         with:
           version: '1.14.2'
 
-      # 8) Download our built artifact into packer/dist so the "file" provisioner can find it
       - name: Download artifact for Packer
         uses: actions/download-artifact@v4
         with:
           name: webapp-artifact
           path: packer/dist
 
-      # 9) Initialize Packer plugins (amazon-ebs)
       - name: packer init
         working-directory: packer
         run: packer init .
 
-      # 10) Build AMI in DEV and share privately to DEMO
       - name: packer build (AMI)
         working-directory: packer
         env:
           PACKER_LOG: "1"
         run: |
-          set -e
-          echo "Starting Packer build..."
           packer build \
             -var "region=${{ secrets.AWS_REGION }}" \
             -var "demo_account_id=${{ secrets.DEMO_ACCOUNT_ID }}" \
