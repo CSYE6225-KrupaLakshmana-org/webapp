@@ -40,7 +40,7 @@ build {
   name    = "webapp-ubuntu24"
   sources = ["source.amazon-ebs.ubuntu24"]
 
-  # 1) OS updates, remove git, install Node + Postgres
+  # 1)OS updates, remove git, install Node + Postgres
   provisioner "shell" {
     inline = [
       "sudo apt-get update -y",
@@ -54,7 +54,7 @@ build {
     ]
   }
 
-  # 2) Create non-login service user
+  # 2)Create non-login service user
   provisioner "shell" {
     inline = [
       "sudo groupadd -f csye6225",
@@ -63,7 +63,7 @@ build {
     ]
   }
 
-  # 3) Create app DB role + database
+  # 3)Create app DB role + database
   provisioner "shell" {
     inline = [
       "sudo -u postgres psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='csye_app'\" | grep -q 1 || sudo -u postgres psql -c \"CREATE ROLE csye_app LOGIN PASSWORD '${var.db_password}';\"",
@@ -71,7 +71,7 @@ build {
     ]
   }
 
-  # 4) Create app dir + env file
+  # 4)Create app dir + env file
   provisioner "shell" {
     inline = [
       "sudo mkdir -p /opt/webapp",
@@ -82,13 +82,13 @@ build {
     ]
   }
 
-  # 5) Copy artifact built by GitHub Actions into the image
+  # 5)Copy artifact built by GitHub Actions into the image
   provisioner "file" {
     source      = "dist/artifact.zip" # workflow downloads to packer/dist so this path resolves
     destination = "/tmp/artifact.zip"
   }
 
-  # 6) Unpack artifact, install ONLY prod deps
+  # 6)Unpack artifact, install ONLY prod deps
   provisioner "shell" {
     inline = [
       "sudo unzip -o /tmp/artifact.zip -d /opt/webapp",
@@ -97,7 +97,7 @@ build {
     ]
   }
 
-  # 7) systemd service to start app at boot
+  # 7)systemd service to start app at boot
   provisioner "shell" {
     inline = [
       "sudo bash -lc 'cat >/etc/systemd/system/webapp.service <<EOF\n[Unit]\nDescription=CSYE6225 WebApp\nAfter=network.target postgresql.service\n\n[Service]\nUser=csye6225\nGroup=csye6225\nEnvironmentFile=/etc/webapp.env\nWorkingDirectory=/opt/webapp\nExecStart=/usr/bin/node /opt/webapp/src/index.js\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\nEOF'",

@@ -9,7 +9,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-packer@v2
         with:
-          version: latest
+         version: '1.14.2'
       - name: packer fmt (check)
         working-directory: packer
         run: packer fmt -check -recursive .
