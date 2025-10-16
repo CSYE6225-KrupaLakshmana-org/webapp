@@ -40,28 +40,37 @@ build {
   name    = "webapp-ubuntu24"
   sources = ["source.amazon-ebs.ubuntu24"]
 
-  # OS, remove git, install runtime + Postgres
+  # OS, remove git, install runtime + Postgres (noninteractive)
   provisioner "shell" {
     inline = [
+      "export DEBIAN_FRONTEND=noninteractive",
+      "export NEEDRESTART_MODE=a",
       "sudo apt-get update -y",
-      "sudo apt-get upgrade -y",
-      "sudo apt-get remove -y git || true", # git must not be present
-      "sudo apt-get install -y curl unzip jq",
-      "sudo apt-get install -y nodejs npm",
+      "sudo apt-get -y -o Dpkg::Options::='--force-confnew' upgrade",
+      "sudo apt-get remove -y git || true",
+      "sudo apt-get install -y curl unzip jq ca-certificates gnupg",
+
+      # Install Node.js 20 (your app requires >=20)
+      "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -",
+      "sudo apt-get install -y nodejs",
+
+      # Install PostgreSQL locally
       "sudo apt-get install -y postgresql postgresql-contrib",
       "sudo systemctl enable postgresql",
       "sudo systemctl start postgresql"
     ]
   }
-
-  # non-login service user
+  # non-login service user + home dir
   provisioner "shell" {
     inline = [
       "sudo groupadd -f csye6225",
-      "id -u csye6225 >/dev/null 2>&1 || sudo useradd -r -g csye6225 -s /usr/sbin/nologin csye6225",
+      "id -u csye6225 >/dev/null 2>&1 || sudo useradd -r -g csye6225 -s /usr/sbin/nologin -d /home/csye6225 csye6225",
+      "sudo mkdir -p /home/csye6225",
+      "sudo chown -R csye6225:csye6225 /home/csye6225",
       "getent passwd csye6225"
     ]
   }
+
 
   # local DB role + database for the app
   provisioner "shell" {
@@ -88,12 +97,15 @@ build {
     destination = "/tmp/artifact.zip"
   }
 
-  # unpack + install prod deps (Node example)
+  # unpack artifact + install prod deps (Node)
   provisioner "shell" {
     inline = [
       "sudo unzip -o /tmp/artifact.zip -d /opt/webapp",
       "sudo chown -R csye6225:csye6225 /opt/webapp",
-      "if [ -f /opt/webapp/package.json ]; then cd /opt/webapp && sudo -u csye6225 npm ci --omit=dev; fi"
+      # set up npm cache in user's home (optional but clean)
+      "sudo -u csye6225 -H mkdir -p /home/csye6225/.npm",
+      # run npm ci as csye6225 with proper HOME
+      "cd /opt/webapp && sudo -u csye6225 -H npm ci --omit=dev"
     ]
   }
 
