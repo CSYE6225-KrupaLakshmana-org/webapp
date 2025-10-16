@@ -1,0 +1,70 @@
+name: Build AMI after merge
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  test-build-ami:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1) Run your Node.js integration tests (A3)
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install & test
+        run: |
+          npm ci
+          npm test
+
+      # 2) Build artifact on the runner (NOT inside the image)
+      - name: Build artifact (zip)
+        run: |
+          mkdir -p dist
+          # Include EXACTLY what's needed to run in /opt/webapp
+          zip -r dist/artifact.zip src package*.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webapp-artifact
+          path: dist/artifact.zip
+
+      # 3) Configure AWS credentials (DEV account)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      # 4) Setup Packer
+      - uses: hashicorp/setup-packer@v2
+        with:
+         version: '1.14.2'
+
+
+      # 5) Download the built artifact where Packer expects it
+      - uses: actions/download-artifact@v4
+        with:
+          name: webapp-artifact
+          path: packer/dist
+
+      # 6) Build AMI
+      - name: packer init & build
+        working-directory: packer
+        env:
+          PACKER_LOG: "1"
+        run: |
+          packer init .
+          packer build \
+            -var "region=${{ secrets.AWS_REGION }}" \
+            -var "demo_account_id=${{ secrets.DEMO_ACCOUNT_ID }}" \
+            -var "app_port=${{ secrets.APP_PORT || 8080 }}" \
+            -var "db_password=${{ secrets.DB_PASSWORD }}" \
+            ubuntu-webapp.pkr.hcl

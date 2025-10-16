@@ -1,0 +1,30 @@
+name: Packer PR Check
+on:
+  pull_request:
+    branches: [ main ]
+jobs:
+  packer-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-packer@v2
+        with:
+         version: '1.14.2'
+      - name: packer fmt (check)
+        working-directory: packer
+        run: packer fmt -check -recursive .
+      # Create placeholder so validate passes the file provisioner check
+      - name: Create placeholder artifact for validate
+        working-directory: packer
+        run: |
+          mkdir -p dist
+          : > dist/artifact.zip
+      - name: packer validate
+        working-directory: packer
+        run: |
+          packer validate \
+            -var "region=us-east-1" \
+            -var "demo_account_id=000000000000" \
+            -var "app_port=8080" \
+            -var "db_password=dummy" \
+            ubuntu-webapp.pkr.hcl
