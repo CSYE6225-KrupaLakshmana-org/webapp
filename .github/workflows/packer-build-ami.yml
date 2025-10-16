@@ -2,7 +2,7 @@ name: Build AMI after merge
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main ]   # runs ONLY after a PR is merged into main
 
 permissions:
   contents: read
@@ -13,13 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    # Start a Postgres service for tests
+    # PostgreSQL for integration tests (runs on the GitHub runner)
     services:
       postgres:
         image: postgres:15
         env:
           POSTGRES_USER: csye_app
-          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD || 'localtestonly' }}  # fallback avoids empty
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD || 'localtestonly' }}
           POSTGRES_DB: webapp
         ports:
           - 5432:5432
@@ -33,11 +33,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Guard: fail early if secret missing (still masked)
+      # Guard so we fail early if the secret is missing in THIS repo
       - name: Ensure DB_PASSWORD secret exists (guard)
         run: |
           if [ -z "${{ secrets.DB_PASSWORD }}" ]; then
-            echo "ERROR: DB_PASSWORD secret is empty or not set IN THIS REPO."
+            echo "ERROR: DB_PASSWORD secret is empty or not set in THIS REPO."
             exit 1
           fi
           echo "DB_PASSWORD is set (value hidden)."
@@ -62,21 +62,21 @@ jobs:
           echo "Postgres did not start in time" >&2
           exit 1
 
-      # If your tests need the schema before TRUNCATE, run it here
-      - name: (Optional) Run DB migrations
+      # Your repo has schema.sql at the root
+      - name: Initialize database schema
         env:
           DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
         run: |
-          if [ -f "db/schema.sql" ]; then
-            psql "$DATABASE_URL" -f db/schema.sql
-          elif [ -f "migrations/init.sql" ]; then
-            psql "$DATABASE_URL" -f migrations/init.sql
-          elif npm run | grep -q "db:migrate"; then
-            npm ci --ignore-scripts
-            npm run db:migrate
-          else
-            echo "No migration step found; skipping."
-          fi
+          echo "Initializing DB from ./schema.sql ..."
+          test -f schema.sql || { echo "schema.sql not found in repo root"; ls -la; exit 1; }
+          psql "$DATABASE_URL" -f schema.sql
+          echo "✅ Schema loaded"
+
+      - name: Verify tables (debug)
+        env:
+          DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
+        run: |
+          psql "$DATABASE_URL" -c '\dt' || true
 
       - name: Install & test
         env:
@@ -91,9 +91,11 @@ jobs:
           npm ci
           npm test
 
+      # Build the application artifact on the runner (NOT inside the AMI)
       - name: Build artifact (zip)
         run: |
           mkdir -p dist
+          # include exactly what /opt/webapp needs at runtime
           zip -r dist/artifact.zip src package*.json
 
       - name: Upload artifact
@@ -102,6 +104,7 @@ jobs:
           name: webapp-artifact
           path: dist/artifact.zip
 
+      # AWS creds for DEV account
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -109,11 +112,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
 
+      # Packer setup (pin version to match local)
       - name: Setup Packer
         uses: hashicorp/setup-packer@v2
         with:
           version: '1.14.2'
 
+      # Put the built artifact where the Packer file provisioner expects it
       - name: Download artifact for Packer
         uses: actions/download-artifact@v4
         with:
@@ -132,6 +137,6 @@ jobs:
           packer build \
             -var "region=${{ secrets.AWS_REGION }}" \
             -var "demo_account_id=${{ secrets.DEMO_ACCOUNT_ID }}" \
-            -var "app_port=${{ secrets.APP_PORT || 8080 }}" \
+            -var "app_port=${{ secrets.APP_PORT || 3000 }}" \
             -var "db_password=${{ secrets.DB_PASSWORD }}" \
             ubuntu-webapp.pkr.hcl
