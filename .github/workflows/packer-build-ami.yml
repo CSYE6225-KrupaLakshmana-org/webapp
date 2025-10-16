@@ -9,16 +9,17 @@ permissions:
 
 jobs:
   test-build-ami:
+    name: Run tests → Build artifact → Build AMI
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    # Start a Postgres container for tests
+    # Start a Postgres service for tests
     services:
       postgres:
         image: postgres:15
         env:
           POSTGRES_USER: csye_app
-          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}   # <-- must be non-empty
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD || 'localtestonly' }}  # fallback avoids empty
           POSTGRES_DB: webapp
         ports:
           - 5432:5432
@@ -32,10 +33,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Guard: fail early if secret missing (still masked)
       - name: Ensure DB_PASSWORD secret exists (guard)
         run: |
           if [ -z "${{ secrets.DB_PASSWORD }}" ]; then
-            echo "ERROR: DB_PASSWORD secret is empty or not set in this repo."
+            echo "ERROR: DB_PASSWORD secret is empty or not set IN THIS REPO."
             exit 1
           fi
           echo "DB_PASSWORD is set (value hidden)."
@@ -60,7 +62,7 @@ jobs:
           echo "Postgres did not start in time" >&2
           exit 1
 
-      # (Optional) Run your schema/migrations if your tests expect tables to exist
+      # If your tests need the schema before TRUNCATE, run it here
       - name: (Optional) Run DB migrations
         env:
           DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
