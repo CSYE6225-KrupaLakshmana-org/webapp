@@ -1,25 +1,26 @@
 name: Build AMI after merge
 
+# 👉 ONLY runs after a PR is merged into main
 on:
   push:
-    branches: [ main ]   # runs ONLY after a PR is merged into main
+    branches: [ main ]
 
 permissions:
   contents: read
 
 jobs:
-  test-build-ami:
-    name: Run tests → Build artifact → Build AMI
+  test-and-package:
+    name: Run tests → build artifact
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    # PostgreSQL for integration tests (runs on the GitHub runner)
+    # Start Postgres for tests (uses your repo secret DB_PASSWORD)
     services:
       postgres:
         image: postgres:15
         env:
           POSTGRES_USER: csye_app
-          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD || 'localtestonly' }}
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
           POSTGRES_DB: webapp
         ports:
           - 5432:5432
@@ -33,11 +34,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Guard so we fail early if the secret is missing in THIS repo
+      # Fail early if secret is missing in THIS repo
       - name: Ensure DB_PASSWORD secret exists (guard)
         run: |
           if [ -z "${{ secrets.DB_PASSWORD }}" ]; then
-            echo "ERROR: DB_PASSWORD secret is empty or not set in THIS REPO."
+            echo "ERROR: DB_PASSWORD secret is empty or not set IN THIS REPO."
             exit 1
           fi
           echo "DB_PASSWORD is set (value hidden)."
@@ -62,25 +63,25 @@ jobs:
           echo "Postgres did not start in time" >&2
           exit 1
 
-      # Your repo has schema.sql at the root
+      # 🔰 your schema file lives at sql/schema.sql
       - name: Initialize database schema
         env:
-          DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           echo "Initializing DB from ./sql/schema.sql ..."
           test -f sql/schema.sql || { echo "sql/schema.sql not found"; ls -R; exit 1; }
-          psql "$DATABASE_URL" -f sql/schema.sql
+          psql -h localhost -U csye_app -d webapp -f sql/schema.sql
           echo "✅ Schema loaded"
 
-      - name: Verify tables (debug )
+      # Optional debug to list tables
+      - name: Verify tables (debug)
         env:
-          DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
-          psql "$DATABASE_URL" -c '\dt' || true
+          psql -h localhost -U csye_app -d webapp -c '\dt' || true
 
       - name: Install & test
         env:
-          DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
           PGHOST: localhost
           PGUSER: csye_app
           PGPASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -91,7 +92,7 @@ jobs:
           npm ci
           npm test
 
-      # Build the application artifact on the runner (NOT inside the AMI)
+      # Build your runtime artifact on the runner (NOT inside the image)
       - name: Build artifact (zip)
         run: |
           mkdir -p dist
@@ -104,22 +105,30 @@ jobs:
           name: webapp-artifact
           path: dist/artifact.zip
 
-      # AWS creds for DEV account
-      - name: Configure AWS credentials
+  build-custom-ami:
+    name: Build custom AMI with Packer (DEV AWS) and share to DEMO
+    runs-on: ubuntu-latest
+    needs: test-and-package
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # AWS creds for your DEV account (secrets must exist in THIS repo)
+      - name: Configure AWS credentials (DEV)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ secrets.AWS_REGION }}
 
-      # Packer setup (pin version to match local)
       - name: Setup Packer
         uses: hashicorp/setup-packer@v2
         with:
-          version: '1.14.2'
+          version: '1.14.2'   # pinned to match local fmt/validate behavior
 
-      # Put the built artifact where the Packer file provisioner expects it
-      - name: Download artifact for Packer
+      - name: Download app artifact for Packer
         uses: actions/download-artifact@v4
         with:
           name: webapp-artifact
@@ -129,14 +138,39 @@ jobs:
         working-directory: packer
         run: packer init .
 
+      # sanity checks to catch common issues early
+      - name: Sanity-check inputs for Packer
+        run: |
+          set -e
+          test -f packer/dist/artifact.zip || { echo "artifact.zip missing at packer/dist"; ls -R packer; exit 1; }
+          [[ "${{ secrets.DEMO_ACCOUNT_ID }}" =~ ^[0-9]{12}$ ]] || { echo "DEMO_ACCOUNT_ID must be 12 digits"; exit 1; }
+          [[ -n "${{ secrets.AWS_REGION }}" ]] || { echo "AWS_REGION missing"; exit 1; }
+          [[ -n "${{ secrets.DB_PASSWORD }}" ]] || { echo "DB_PASSWORD missing"; exit 1; }
+
+      - name: Show AWS identity and default VPC
+        run: |
+          aws sts get-caller-identity
+          echo "Region: $(aws configure get region)"
+          echo "Default VPC in region:"
+          aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[].VpcId' --output text || true
+          echo "(If none, create one in DEV with: aws ec2 create-default-vpc )"
+
       - name: packer build (AMI)
         working-directory: packer
         env:
           PACKER_LOG: "1"
         run: |
-          packer build \
+          set -e
+          mkdir -p ../_logs
+          packer build -timestamp-ui \
             -var "region=${{ secrets.AWS_REGION }}" \
             -var "demo_account_id=${{ secrets.DEMO_ACCOUNT_ID }}" \
-            -var "app_port=${{ secrets.APP_PORT || 3000 }}" \
+            -var "app_port=${{ secrets.APP_PORT || 8080 }}" \
             -var "db_password=${{ secrets.DB_PASSWORD }}" \
-            ubuntu-webapp.pkr.hcl
+            ubuntu-webapp.pkr.hcl | tee ../_logs/packer-build.log
+
+      - name: Upload packer build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: packer-build-log
+          path: _logs/packer-build.log
