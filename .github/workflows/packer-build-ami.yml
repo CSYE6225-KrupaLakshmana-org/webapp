@@ -72,7 +72,7 @@ jobs:
           psql "$DATABASE_URL" -f sql/schema.sql
           echo "✅ Schema loaded"
 
-      - name: Verify tables (debug)
+      - name: Verify tables (debug )
         env:
           DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
         run: |
