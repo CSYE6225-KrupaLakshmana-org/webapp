@@ -108,7 +108,6 @@ build {
     ]
   }
 
-  
   # systemd unit (adjust ExecStart to your real command)
   provisioner "shell" {
     inline = [
