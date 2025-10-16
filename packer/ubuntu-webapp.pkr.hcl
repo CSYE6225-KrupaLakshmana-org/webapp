@@ -5,10 +5,10 @@ packer {
   }
 }
 
-variable "region"          { type = string }
+variable "region" { type = string }
 variable "demo_account_id" { type = string }
-variable "app_port"        { type = number }
-variable "db_password"     { type = string }
+variable "app_port" { type = number }
+variable "db_password" { type = string }
 
 locals {
   ami_name = "webapp-ubuntu-24-04-${formatdate("YYYYMMDDhhmmss", timestamp())}"
@@ -21,7 +21,7 @@ source "amazon-ebs" "ubuntu24" {
 
   ami_name        = local.ami_name
   ami_description = "CSYE6225 webapp AMI (Ubuntu 24.04 + Postgres + systemd)"
-  ami_users       = [var.demo_account_id]   # share privately to DEMO
+  ami_users       = [var.demo_account_id] # share privately to DEMO
 
   associate_public_ip_address = true
 
@@ -45,9 +45,9 @@ build {
     inline = [
       "sudo apt-get update -y",
       "sudo apt-get upgrade -y",
-      "sudo apt-get remove -y git || true",     # AMI must NOT have git
+      "sudo apt-get remove -y git || true", # AMI must NOT have git
       "sudo apt-get install -y curl unzip jq",
-      "sudo apt-get install -y nodejs npm",     # Node.js runtime
+      "sudo apt-get install -y nodejs npm", # Node.js runtime
       "sudo apt-get install -y postgresql postgresql-contrib",
       "sudo systemctl enable postgresql",
       "sudo systemctl start postgresql"
@@ -84,7 +84,7 @@ build {
 
   # 5) Copy artifact built by GitHub Actions into the image
   provisioner "file" {
-    source      = "dist/artifact.zip"     # workflow downloads to packer/dist so this path resolves
+    source      = "dist/artifact.zip" # workflow downloads to packer/dist so this path resolves
     destination = "/tmp/artifact.zip"
   }
 
