@@ -1,24 +1,38 @@
 name: Packer PR Check
+
 on:
   pull_request:
     branches: [ main ]
+
 jobs:
   packer-checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # pin Packer to match local
       - uses: hashicorp/setup-packer@v2
         with:
-         version: '1.14.2'
+          version: '1.14.2'
+
+      # ---- fmt check ----
       - name: packer fmt (check)
         working-directory: packer
         run: packer fmt -check -recursive .
-      # Create placeholder so validate passes the file provisioner check
+
+      # ---- install required plugins for this template ----
+      - name: packer init
+        working-directory: packer
+        run: packer init .
+
+      # ---- create placeholder so validate doesn't fail on file provisioner ----
       - name: Create placeholder artifact for validate
         working-directory: packer
         run: |
           mkdir -p dist
           : > dist/artifact.zip
+
+      # ---- validate template ----
       - name: packer validate
         working-directory: packer
         run: |
