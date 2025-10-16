@@ -46,7 +46,8 @@ jobs:
       # 4) Setup Packer
       - uses: hashicorp/setup-packer@v2
         with:
-          version: latest
+          version: '1.14.2'
+
 
       # 5) Download the built artifact where Packer expects it
       - uses: actions/download-artifact@v4
