@@ -67,9 +67,9 @@ jobs:
         env:
           DATABASE_URL: postgresql://csye_app:${{ secrets.DB_PASSWORD }}@localhost:5432/webapp
         run: |
-          echo "Initializing DB from ./schema.sql ..."
-          test -f schema.sql || { echo "schema.sql not found in repo root"; ls -la; exit 1; }
-          psql "$DATABASE_URL" -f schema.sql
+          echo "Initializing DB from ./sql/schema.sql ..."
+          test -f sql/schema.sql || { echo "sql/schema.sql not found"; ls -R; exit 1; }
+          psql "$DATABASE_URL" -f sql/schema.sql
           echo "✅ Schema loaded"
 
       - name: Verify tables (debug)

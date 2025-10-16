@@ -22,8 +22,7 @@ quantity INTEGER NOT NULL CHECK (quantity >= 0),
 date_added TIMESTAMPTZ NOT NULL DEFAULT now(),
 date_last_updated TIMESTAMPTZ NOT NULL DEFAULT now(),
 owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE
-);
-
+); 
 
 CREATE INDEX IF NOT EXISTS idx_products_owner ON products(owner_user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_owner ON products(sku, owner_user_id);
