@@ -2,7 +2,7 @@ name: Build AMI after merge
 
 # 👉 ONLY runs after a PR is merged into main
 on:
-  push:
+  pull_request:
     branches: [ main ]
 
 permissions:
