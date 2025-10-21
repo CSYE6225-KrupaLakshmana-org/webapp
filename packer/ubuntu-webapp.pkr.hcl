@@ -3,7 +3,7 @@ packer {
   required_plugins {
     amazon = { source = "github.com/hashicorp/amazon", version = ">= 1.2.0" }
   }
-}
+
 
 variable "region" { type = string }
 variable "demo_account_id" { type = string }
