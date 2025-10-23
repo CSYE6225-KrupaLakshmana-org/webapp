@@ -26,3 +26,17 @@ owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE
 
 CREATE INDEX IF NOT EXISTS idx_products_owner ON products(owner_user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_owner ON products(sku, owner_user_id);
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TABLE IF NOT EXISTS images (
+  image_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id     UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  owner_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  file_name      TEXT NOT NULL,
+  s3_bucket_path TEXT NOT NULL,   -- key only (not a full s3:// url)
+  date_created   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS images_product_idx ON images(product_id);
+CREATE INDEX IF NOT EXISTS images_owner_idx   ON images(owner_id);
