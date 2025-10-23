@@ -1,4 +1,14 @@
 // src/routes/v1.js
+import multer from "multer";
+import {
+  uploadImageHandler,
+  listImagesHandler,
+  getImageHandler,
+  deleteImageHandler
+} from "../controllers/imageController.js";
+
+const upload = multer({ storage: multer.memoryStorage() });
+
 import { Router } from 'express';
 import { requireBasicAuth } from '../middleware/auth.js';
 import { requireJson } from '../middleware/requireJson.js';
@@ -33,5 +43,11 @@ r.post('/v1/product', requireJson, requireBasicAuth, createProductHandler);
 r.put('/v1/product/:productId', requireJson, requireBasicAuth, putProductHandler);
 r.patch('/v1/product/:productId', requireJson, requireBasicAuth, patchProductHandler);
 r.delete('/v1/product/:productId', requireBasicAuth, deleteProductHandler);
+
+r.post('/v1/product/:product_id/image', requireBasicAuth, upload.single('file'), uploadImageHandler);
+r.get('/v1/product/:product_id/image', requireBasicAuth, listImagesHandler);
+r.get('/v1/product/:product_id/image/:image_id', requireBasicAuth, getImageHandler);
+r.delete('/v1/product/:product_id/image/:image_id', requireBasicAuth, deleteImageHandler);
+
 
 export default r;
