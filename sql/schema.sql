@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS images (
   owner_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   file_name      TEXT NOT NULL,
   s3_bucket_path TEXT NOT NULL,   -- key only (not a full s3:// url)
-  date_created   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  date_created   TIMESTAMPTZ NOT NULL DEFAULT NOW();
 );
 
 CREATE INDEX IF NOT EXISTS images_product_idx ON images(product_id);
