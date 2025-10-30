@@ -11,7 +11,10 @@ dotenv.config({
 
 const app = express();
 
-app.use(morgan('combined'));                 // keep access log lines
+if (process.env.NODE_ENV !== 'test') {
+  // simple console logger; CloudWatch Agent will still ship stdout if you want
+  app.use(morgan('combined'));
+}              // keep access log lines
 
 // Count + time every request
 app.use((req, res, next) => {
