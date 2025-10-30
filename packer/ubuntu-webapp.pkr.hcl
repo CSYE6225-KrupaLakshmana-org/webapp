@@ -1,7 +1,10 @@
 packer {
   required_version = ">= 1.9.0"
   required_plugins {
-    amazon = { source = "github.com/hashicorp/amazon", version = ">= 1.2.0" }
+    amazon = {
+      source  = "github.com/hashicorp/amazon"
+      version = ">= 1.2.0"
+    }
   }
 }
 
@@ -22,6 +25,9 @@ source "amazon-ebs" "ubuntu24" {
   ami_name                    = local.ami_name
   ami_description             = "CSYE6225 webapp AMI (Ubuntu 24.04 + Postgres + systemd + CloudWatch Agent)"
   ami_users                   = [var.demo_account_id]
+  ami_description             = "CSYE6225 webapp AMI (Ubuntu 24.04 + systemd, NO local DB)"
+  ami_users                   = [var.demo_account_id] # share privately to DEMO
+
   associate_public_ip_address = true
 
   source_ami_filter {
@@ -31,6 +37,7 @@ source "amazon-ebs" "ubuntu24" {
       virtualization-type = "hvm"
     }
     owners      = ["099720109477"]
+    owners      = ["099720109477"] # Canonical official Ubuntu
     most_recent = true
   }
 }
@@ -40,6 +47,7 @@ build {
   sources = ["source.amazon-ebs.ubuntu24"]
 
   # ---------- Base OS & runtimes ----------
+  # --- OS setup ---
   provisioner "shell" {
     inline = [
       "export DEBIAN_FRONTEND=noninteractive",
@@ -69,10 +77,17 @@ build {
   }
 
   # ---------- DB role & db ----------
+      "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -",
+      "sudo apt-get install -y nodejs"
+    ]
+  }
+
+  # --- create system user ---
   provisioner "shell" {
     inline = [
-      "sudo -u postgres psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='csye_app'\" | grep -q 1 || sudo -u postgres psql -c \"CREATE ROLE csye_app LOGIN PASSWORD '${var.db_password}';\"",
-      "sudo -u postgres psql -tc \"SELECT 1 FROM pg_database WHERE datname='webapp'\" | grep -q 1 || sudo -u postgres createdb -O csye_app webapp"
+      "id -u app >/dev/null 2>&1 || sudo useradd --system --create-home --shell /usr/sbin/nologin app",
+      "sudo mkdir -p /home/app",
+      "sudo chown -R app:app /home/app"
     ]
   }
 
@@ -88,6 +103,18 @@ build {
   }
 
   # ---------- App artifact ----------
+  # --- directories for app + config ---
+  provisioner "shell" {
+    inline = [
+      "sudo mkdir -p /opt/webapp",
+      "sudo chown -R app:app /opt/webapp",
+      "sudo mkdir -p /etc/webapp",
+      "sudo chown root:root /etc/webapp",
+      "sudo chmod 755 /etc/webapp"
+    ]
+  }
+
+  # --- copy artifact from runner ---
   provisioner "file" {
     source      = "dist/artifact.zip"
     destination = "/tmp/artifact.zip"
@@ -184,6 +211,23 @@ EOT
     inline = [
       "sudo systemctl daemon-reload",
       "sudo systemctl enable webapp.service"
+=======
+
+  # --- unpack + install node deps ---
+  provisioner "shell" {
+    inline = [
+      "sudo unzip -o /tmp/artifact.zip -d /opt/webapp",
+      "sudo chown -R app:app /opt/webapp",
+      "sudo -u app -H mkdir -p /home/app/.npm",
+      "cd /opt/webapp && sudo -u app -H npm ci --omit=dev"
+    ]
+  }
+
+  # --- create systemd unit ---
+  provisioner "shell" {
+    inline = [
+      "sudo bash -lc 'cat >/etc/systemd/system/webapp.service <<EOF\n[Unit]\nDescription=CSYE6225 WebApp\nAfter=network.target\n\n[Service]\nUser=app\nGroup=app\nEnvironmentFile=/etc/webapp/.env\nWorkingDirectory=/opt/webapp\nExecStart=/usr/bin/node /opt/webapp/src/index.js\nRestart=on-failure\nRestartSec=3\nNoNewPrivileges=true\n\n[Install]\nWantedBy=multi-user.target\nEOF'",
+      "sudo systemctl daemon-reload"
     ]
   }
 }
