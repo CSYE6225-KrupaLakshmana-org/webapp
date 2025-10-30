@@ -25,6 +25,7 @@
     "@aws-sdk/client-s3": "^3.914.0",
     "bcrypt": "^6.0.0",
     "dotenv": "^17.2.2",
+    "hot-shots": "^10.0.0",
     "express": "^5.1.0",
     "multer": "^2.0.2",
     "pg": "^8.12.0",
