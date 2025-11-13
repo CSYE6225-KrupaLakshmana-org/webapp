@@ -40,3 +40,14 @@ CREATE TABLE IF NOT EXISTS images (
 
 CREATE INDEX IF NOT EXISTS images_product_idx ON images(product_id);
 CREATE INDEX IF NOT EXISTS images_owner_idx   ON images(owner_id);
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Table to store verification tokens
+CREATE TABLE IF NOT EXISTS email_verifications (
+  email       CITEXT NOT NULL,
+  token       UUID PRIMARY KEY,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  consumed    BOOLEAN NOT NULL DEFAULT FALSE
+);

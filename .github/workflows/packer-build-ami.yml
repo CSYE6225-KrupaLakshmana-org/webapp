@@ -1,8 +1,9 @@
 name: Build AMI after merge
 
-# 👉 ONLY runs after a PR is merged into main
+# 👉 ONLY runs after a PR into main is CLOSED
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches: [ main ]
 
 permissions:
@@ -14,7 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    # Start Postgres for tests (uses your repo secret DB_PASSWORD)
+    # ✅ only run this job if the PR was actually merged
+    if: github.event.pull_request.merged == true
+
     services:
       postgres:
         image: postgres:15
@@ -34,7 +37,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Fail early if secret is missing in THIS repo
+      # Guard so we fail early if DB_PASSWORD is missing
       - name: Ensure DB_PASSWORD secret exists (guard)
         run: |
           if [ -z "${{ secrets.DB_PASSWORD }}" ]; then
@@ -63,7 +66,6 @@ jobs:
           echo "Postgres did not start in time" >&2
           exit 1
 
-      # 🔰 your schema file lives at sql/schema.sql
       - name: Initialize database schema
         env:
           PGPASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -73,7 +75,6 @@ jobs:
           psql -h localhost -U csye_app -d webapp -f sql/schema.sql
           echo "✅ Schema loaded"
 
-      # Optional debug to list tables
       - name: Verify tables (debug)
         env:
           PGPASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -92,11 +93,10 @@ jobs:
           npm ci
           npm test
 
-      # Build your runtime artifact on the runner (NOT inside the image)
+      # Build runtime artifact for /opt/webapp
       - name: Build artifact (zip)
         run: |
           mkdir -p dist
-          # include exactly what /opt/webapp needs at runtime
           zip -r dist/artifact.zip src package*.json
 
       - name: Upload artifact
@@ -105,28 +105,35 @@ jobs:
           name: webapp-artifact
           path: dist/artifact.zip
 
-  build-custom-ami:
-    name: Build custom AMI with Packer (DEV AWS) and share to DEMO
+  build-and-deploy:
+    name: Build AMI (DEV) → Share to DEMO → Instance refresh
     runs-on: ubuntu-latest
-    needs: test-and-package
     timeout-minutes: 60
+    needs: test-and-package
+
+    # ✅ only run when PR is merged
+    if: github.event.pull_request.merged == true
+
+    env:
+      # ASG name from your Terraform (demo account)
+      ASG_NAME: "csye6225_asg"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # AWS creds for your DEV account (secrets must exist in THIS repo)
+      # ---------- DEV: Build AMI with Packer ----------
       - name: Configure AWS credentials (DEV)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ secrets.AWS_REGION }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}      # DEV
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # DEV
+          aws-region:            ${{ secrets.AWS_REGION }}             # DEV (e.g., us-east-1)
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@v2
         with:
-          version: '1.14.2'   # pinned to match local fmt/validate behavior
+          version: '1.14.2'
 
       - name: Download app artifact for Packer
         uses: actions/download-artifact@v4
@@ -138,7 +145,6 @@ jobs:
         working-directory: packer
         run: packer init .
 
-      # sanity checks to catch common issues early
       - name: Sanity-check inputs for Packer
         run: |
           set -e
@@ -147,30 +153,138 @@ jobs:
           [[ -n "${{ secrets.AWS_REGION }}" ]] || { echo "AWS_REGION missing"; exit 1; }
           [[ -n "${{ secrets.DB_PASSWORD }}" ]] || { echo "DB_PASSWORD missing"; exit 1; }
 
-      - name: Show AWS identity and default VPC
+      - name: Show AWS identity and default VPC (DEV)
         run: |
           aws sts get-caller-identity
           echo "Region: $(aws configure get region)"
           echo "Default VPC in region:"
           aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[].VpcId' --output text || true
-          echo "(If none, create one in DEV with: aws ec2 create-default-vpc )"
 
-      - name: packer build (AMI)
+      # 🧱 Build AMI in DEV and capture AMI ID
+      - name: packer build (AMI in DEV)
+        id: packer-build
         working-directory: packer
         env:
           PACKER_LOG: "1"
         run: |
           set -e
           mkdir -p ../_logs
-          packer build -timestamp-ui \
+          packer build -machine-readable -color=false \
             -var "region=${{ secrets.AWS_REGION }}" \
             -var "demo_account_id=${{ secrets.DEMO_ACCOUNT_ID }}" \
             -var "app_port=${{ secrets.APP_PORT || 8080 }}" \
             -var "db_password=${{ secrets.DB_PASSWORD }}" \
             ubuntu-webapp.pkr.hcl | tee ../_logs/packer-build.log
 
+          AMI_LINE=$(grep 'artifact,0,id' ../_logs/packer-build.log | tail -n 1 || true)
+          if [ -z "$AMI_LINE" ]; then
+            echo "AMI id not found in packer output"; exit 1
+          fi
+
+          # machine-readable: ...,artifact,0,id,us-east-1:ami-0123456789abcdef0
+          AMI_ID=$(echo "$AMI_LINE" | cut -d',' -f6 | cut -d':' -f2)
+          echo "Built AMI_ID=$AMI_ID"
+          echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
+
       - name: Upload packer build log
         uses: actions/upload-artifact@v4
         with:
           name: packer-build-log
           path: _logs/packer-build.log
+
+      # Explicitly share AMI with DEMO (even if template also does it)
+      - name: Share AMI with DEMO account
+        run: |
+          AMI_ID="${{ steps.packer-build.outputs.ami_id }}"
+          DEMO_ACCOUNT="${{ secrets.DEMO_ACCOUNT_ID }}"
+          echo "Sharing AMI $AMI_ID with demo account $DEMO_ACCOUNT"
+          aws ec2 modify-image-attribute \
+            --image-id "$AMI_ID" \
+            --launch-permission "Add=[{UserId=$DEMO_ACCOUNT}]"
+
+      # ---------- DEMO: Update LT + instance refresh ----------
+      - name: Configure AWS credentials (DEMO)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.DEMO_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEMO_AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.DEMO_AWS_REGION }}
+
+      - name: Update Launch Template and start instance refresh (DEMO)
+        id: refresh
+        run: |
+          AMI_ID="${{ steps.packer-build.outputs.ami_id }}"
+          ASG_NAME="${{ env.ASG_NAME }}"
+
+          echo "Using AMI $AMI_ID for ASG $ASG_NAME in DEMO"
+
+          # Find Launch Template attached to ASG
+          LT_ID=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$ASG_NAME" \
+            --query 'AutoScalingGroups[0].LaunchTemplate.LaunchTemplateId' \
+            --output text)
+
+          if [ -z "$LT_ID" ] || [ "$LT_ID" = "None" ]; then
+            echo "Could not find LaunchTemplateId for ASG $ASG_NAME"
+            exit 1
+          fi
+
+          echo "Launch Template ID: $LT_ID"
+
+          # Create new Launch Template version using new AMI
+          NEW_VERSION=$(aws ec2 create-launch-template-version \
+            --launch-template-id "$LT_ID" \
+            --source-version '$Latest' \
+            --launch-template-data "{\"ImageId\":\"$AMI_ID\"}" \
+            --query 'LaunchTemplateVersion.VersionNumber' \
+            --output text)
+
+          echo "New Launch Template version: $NEW_VERSION"
+
+          # Point ASG at the new version
+          aws autoscaling update-auto-scaling-group \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --launch-template "LaunchTemplateId=$LT_ID,Version=$NEW_VERSION"
+
+          # Start instance refresh
+          REFRESH_ID=$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --strategy Rolling \
+            --query 'InstanceRefreshId' \
+            --output text)
+
+          echo "REFRESH_ID=$REFRESH_ID"
+          echo "refresh_id=$REFRESH_ID" >> $GITHUB_OUTPUT
+
+      - name: Wait for instance refresh (DEMO)
+        run: |
+          ASG_NAME="${{ env.ASG_NAME }}"
+          REFRESH_ID="${{ steps.refresh.outputs.refresh_id }}"
+
+          echo "Waiting for instance refresh $REFRESH_ID on ASG $ASG_NAME"
+
+          # Poll every 30s up to ~30 minutes
+          for i in {1..60}; do
+            STATUS=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --instance-refresh-ids "$REFRESH_ID" \
+              --query 'InstanceRefreshes[0].Status' \
+              --output text)
+
+            echo "Status: $STATUS"
+
+            if [ "$STATUS" = "Successful" ]; then
+              echo "Instance refresh succeeded"
+              exit 0
+            fi
+
+            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+              echo "Instance refresh failed with status $STATUS"
+              exit 1
+            fi
+
+            sleep 30
+          done
+
+          echo "Timed out waiting for instance refresh"
+          exit 1
