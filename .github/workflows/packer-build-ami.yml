@@ -112,7 +112,7 @@ jobs:
 
     env:
       # ASG name from your Terraform (demo account)
-      ASG_NAME: "csye6225_asg"
+      ASG_NAME: "webapp-asg"
 
     steps:
       - name: Checkout
