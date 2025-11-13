@@ -158,6 +158,7 @@ jobs:
 
       # 🧱 Build AMI in DEV and capture AMI ID
       - name: packer build (AMI)
+        id: packer-build
         working-directory: packer
         env:
           PACKER_LOG: "1"
@@ -171,15 +172,17 @@ jobs:
             -var "db_password=${{ secrets.DB_PASSWORD }}" \
             ubuntu-webapp.pkr.hcl | tee ../_logs/packer-build.log
 
-          AMI_LINE=$(grep 'artifact,0,id' ../_logs/packer-build.log | tail -n 1 || true)
-          if [ -z "$AMI_LINE" ]; then
-            echo "AMI id not found in packer output"; exit 1
+          # Grab the last AMI id mentioned in the log, e.g. ami-048d5018ce97fc9e0
+          AMI_ID=$(grep -o 'ami-[0-9a-f]\+' ../_logs/packer-build.log | tail -n 1 || true)
+
+          if [ -z "$AMI_ID" ]; then
+            echo "AMI id not found in packer output"
+            exit 1
           fi
 
-          # machine-readable: ...,artifact,0,id,us-east-1:ami-0123456789abcdef0
-          AMI_ID=$(echo "$AMI_LINE" | cut -d',' -f6 | cut -d':' -f2)
           echo "Built AMI_ID=$AMI_ID"
-          echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
+          echo "ami_id=$AMI_ID" >> "$GITHUB_OUTPUT"
+
 
       - name: Upload packer build log
         uses: actions/upload-artifact@v4
