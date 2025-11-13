@@ -2,8 +2,7 @@ name: Build AMI after merge
 
 # 👉 ONLY runs after a PR into main is CLOSED
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [ main ]
 
 permissions:
@@ -14,8 +13,6 @@ jobs:
     name: Run tests → build artifact
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
-    if: github.event.pull_request.merged == true
 
     services:
       postgres:
@@ -78,7 +75,7 @@ jobs:
 
       - name: Verify tables (debug)
         env:
-          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+          PGPASSWORD: postgres
         run: |
           psql -h localhost -U csye_app -d webapp -c '\dt' || true
 
@@ -111,9 +108,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: test-and-package
-
-    # ✅ only run when PR is merged
-    if: github.event.pull_request.merged == true
 
 
     env:
