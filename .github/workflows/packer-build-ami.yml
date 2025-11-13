@@ -10,21 +10,20 @@ permissions:
   contents: read
 
 jobs:
-  test-and-package:
+   test-and-package:
     name: Run tests → build artifact
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    # ✅ only run this job if the PR was actually merged
     if: github.event.pull_request.merged == true
 
     services:
       postgres:
-        image: postgres:15
+        image: postgres:16
         env:
-          POSTGRES_USER: csye_app
-          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
           POSTGRES_DB: webapp
+          POSTGRES_USER: csye_app
+          POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
@@ -68,7 +67,7 @@ jobs:
 
       - name: Initialize database schema
         env:
-          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+          PGPASSWORD: postgres
         run: |
           echo "Initializing DB from ./sql/schema.sql ..."
           test -f sql/schema.sql || { echo "sql/schema.sql not found"; ls -R; exit 1; }
@@ -85,7 +84,7 @@ jobs:
         env:
           PGHOST: localhost
           PGUSER: csye_app
-          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+          PGPASSWORD: postgres
           PGDATABASE: webapp
           PGPORT: 5432
           NODE_ENV: test
@@ -105,7 +104,7 @@ jobs:
           name: webapp-artifact
           path: dist/artifact.zip
 
-  build-and-deploy:
+   build-and-deploy:
     name: Build AMI (DEV) → Share to DEMO → Instance refresh
     runs-on: ubuntu-latest
     timeout-minutes: 60
