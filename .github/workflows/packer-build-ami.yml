@@ -121,7 +121,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ---------- DEV: Build AMI with Packer ----------
+      # ---------- DEV: Build AMI with Packer 
       - name: Configure AWS credentials (DEV)
         uses: aws-actions/configure-aws-credentials@v4
         with:
