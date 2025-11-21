@@ -33,6 +33,7 @@ const r = Router();
 
 // PUBLIC
 r.get("/healthz", (req, res) => res.status(200).send());
+r.get("/cicd", (req, res) => res.status(200).send());
 r.post("/v1/user", requireJson, createUserHandler);
 r.get("/v1/product/:productId", publicGetProduct);
 
